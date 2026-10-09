@@ -22,7 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
-#include <string.h>
+#include "string.h"
 #include <stdarg.h>
 /* USER CODE END Includes */
 
@@ -33,7 +33,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define SAMPLES 10
+#define PPR 330
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -50,19 +51,19 @@ TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 
-UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
 
 PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
-// Task 3 variables (plain variables instead of #define)
-const uint32_t PPR = 330;               // pulses per revolution - check your motor datasheet
-const uint32_t edge_timeout_ms = 2000;  // give up if no edge arrives (motor stopped)
-uint32_t ticks = 0;
-float freq = 0.0f;
-float rpm = 0.0f;
-uint32_t f100 = 0;
-uint32_t r100 = 0;
+uint32_t averagePeriod = 0;
+uint32_t frequency = 0;
+uint32_t rpm = 0;
+volatile uint32_t last_captured_value = 0;
+volatile uint32_t captured_period = 0;
+volatile uint8_t sample_count = 0;
+volatile uint64_t period_sum = 0;
+volatile uint8_t print_flag = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -74,46 +75,38 @@ static void MX_TIM2_Init(void);
 static void MX_USB_PCD_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM4_Init(void);
-static void MX_USART1_UART_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-// Required print function
 void myPrintf(const char *fmt, ...) {
-    char buffer[100];
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buffer, sizeof(buffer), fmt, args);
-    va_end(args);
-    HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+      char buffer[100];
+          va_list args;
+              va_start(args, fmt);
+                  vsnprintf(buffer, sizeof(buffer), fmt, args);
+                      va_end(args);
+                          HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY); 
 }
 
-// Returns 1 when a falling edge on PB5 was seen, 0 on timeout.
-static uint8_t wait_falling_edge(uint32_t timeout_ms)
-{
-    uint32_t t0 = HAL_GetTick();
-
-    // make sure the line is HIGH first
-    while (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_5) == GPIO_PIN_RESET)
-        if ((HAL_GetTick() - t0) > timeout_ms) return 0;
-
-    // then wait for it to fall
-    while (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_5) == GPIO_PIN_SET)
-        if ((HAL_GetTick() - t0) > timeout_ms) return 0;
-
-    return 1;
-}
-
-// Actual TIM2 counting frequency, calculated from the real clock setup
-static uint32_t timer_tick_hz(void)
-{
-    uint32_t pclk1  = HAL_RCC_GetPCLK1Freq();
-    uint32_t timclk = (RCC->CFGR & RCC_CFGR_PPRE1_2) ? (pclk1 * 2U) : pclk1;
-    return timclk / (htim2.Init.Prescaler + 1U);
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM2) {
+        uint32_t current_capture = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+        if (last_captured_value != 0) {
+            if (current_capture >= last_captured_value) captured_period = current_capture - last_captured_value;
+            period_sum += captured_period;
+            sample_count++;
+            if (sample_count >= SAMPLES) {
+                averagePeriod = period_sum / SAMPLES;
+                period_sum = 0;
+                sample_count = 0;
+                print_flag = 1;
+            }
+        }
+        last_captured_value = current_capture;
+    }
 }
 /* USER CODE END 0 */
 
@@ -152,60 +145,30 @@ int main(void)
   MX_USB_PCD_Init();
   MX_TIM3_Init();
   MX_TIM4_Init();
-  MX_USART1_UART_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  // Motor is powered directly (M+ -> 9V, M- -> GND), so NO PWM start here.
-  // Start PWM
-  // HAL_TIM_PWM_Start (&htim3 , TIM_CHANNEL_1 );
-  // HAL_TIM_PWM_Start (&htim3 , TIM_CHANNEL_2 );
-
-  myPrintf("Task 3: encoder RPM (polling)\r\n");
+  HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
-    
-
-      // TASK_3
-      // 1st falling edge: reset and start the timer
-      if (!wait_falling_edge(edge_timeout_ms))
-      {
-          myPrintf("No encoder pulses detected\r\n");
-          HAL_Delay(500);
-          continue;
+    if (print_flag) {
+          print_flag = 0; 
+          
+          if (averagePeriod != 0) {
+              // Assuming 1 MHz timer tick (72MHz clock with prescaler 71)
+              frequency = 1000000 / averagePeriod; 
+              rpm = (60 * frequency) / PPR;
+              
+              // Call your custom function
+              myPrintf("Average Period: %d us\r\n", (int)averagePeriod);
+              myPrintf("Frequency: %d Hz\r\n", (int)frequency);
+              myPrintf("RPM: %d\r\n", (int)rpm);
+              myPrintf("--------------------------\r\n");
+          }
       }
-      __HAL_TIM_SET_COUNTER(&htim2, 0);
-      HAL_TIM_Base_Start(&htim2);
-
-      // 2nd falling edge: stop timer and read elapsed ticks
-      if (!wait_falling_edge(edge_timeout_ms))
-      {
-          HAL_TIM_Base_Stop(&htim2);
-          myPrintf("Timeout waiting for 2nd edge\r\n");
-          HAL_Delay(500);
-          continue;
-      }
-      ticks = __HAL_TIM_GET_COUNTER(&htim2);
-      HAL_TIM_Base_Stop(&htim2);
-
-      if (ticks != 0)
-      {
-          freq = (float)timer_tick_hz() / (float)ticks;     // Hz
-          rpm  = (60.0f * freq) / (float)PPR;
-
-          // print as whole + 2 decimals (no float support needed in printf)
-          f100 = (uint32_t)(freq * 100.0f);
-          r100 = (uint32_t)(rpm * 100.0f);
-
-          myPrintf("Ticks: %lu | Freq: %lu.%02lu Hz | RPM: %lu.%02lu\r\n",
-                   (unsigned long)ticks,
-                   (unsigned long)(f100 / 100), (unsigned long)(f100 % 100),
-                   (unsigned long)(r100 / 100), (unsigned long)(r100 % 100));
-      }
-      HAL_Delay(500);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -252,9 +215,9 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_USART1
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_USART2
                               |RCC_PERIPHCLK_I2C1;
-  PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
+  PeriphClkInit.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
   PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_HSI;
   PeriphClkInit.USBClockSelection = RCC_USBCLKSOURCE_PLL;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
@@ -514,37 +477,37 @@ static void MX_TIM4_Init(void)
 }
 
 /**
-  * @brief USART1 Initialization Function
+  * @brief USART2 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_USART1_UART_Init(void)
+static void MX_USART2_UART_Init(void)
 {
 
-  /* USER CODE BEGIN USART1_Init 0 */
+  /* USER CODE BEGIN USART2_Init 0 */
 
-  /* USER CODE END USART1_Init 0 */
+  /* USER CODE END USART2_Init 0 */
 
-  /* USER CODE BEGIN USART1_Init 1 */
+  /* USER CODE BEGIN USART2_Init 1 */
 
-  /* USER CODE END USART1_Init 1 */
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 38400;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN USART1_Init 2 */
+  /* USER CODE BEGIN USART2_Init 2 */
 
-  /* USER CODE END USART1_Init 2 */
+  /* USER CODE END USART2_Init 2 */
 
 }
 
