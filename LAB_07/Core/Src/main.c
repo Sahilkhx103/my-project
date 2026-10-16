@@ -21,8 +21,14 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <string.h>
-#include <stdio.h>
+#include "stdio.h"
+#include "stm32f3xx_hal.h"
+#include "stm32f3xx_hal_adc.h"
+#include "stm32f3xx_hal_def.h"
+#include "stm32f3xx_hal_uart.h"
+#include "string.h"
+#include <stdint.h>
+#include "arm_math.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -64,11 +70,26 @@ static void MX_SPI1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USB_PCD_Init(void);
 /* USER CODE BEGIN PFP */
-
+int _write(int file , char *ptr , int len) {
+  HAL_UART_Transmit(&huart1, (uint8_t*) ptr, len, HAL_MAX_DELAY);
+  return len;
+}
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+#define FILTER_LEN 10
+
+float32_t inputBuffer[FILTER_LEN];
+float32_t output;
+uint32_t idx = 0;
+
+void apply_moving_average(float32_t new_sample) {
+  inputBuffer[idx] = new_sample;
+  idx = (idx+ 1) % FILTER_LEN;
+  arm_mean_f32(inputBuffer, FILTER_LEN, &output);
+}
+
 
 /* USER CODE END 0 */
 
@@ -98,7 +119,7 @@ int main(void)
   /* USER CODE BEGIN SysInit */
 
   /* USER CODE END SysInit */
-
+  
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_ADC1_Init();
@@ -107,38 +128,53 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USB_PCD_Init();
   /* USER CODE BEGIN 2 */
-
+  
   /* USER CODE END 2 */
-
+  
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  char uart_buf[50];
-  uint32_t adc_val = 0;
+  
+  //TASK 1:
+  // char uart_buf[50];
+  // uint32_t adc_val = 0;
+  
   while (1)
   {
-    /* USER CODE END WHILE */
-  HAL_ADC_Start(&hadc1); 
+    //   //TASK 1:
+    //   /* USER CODE END WHILE */
+  // HAL_ADC_Start(&hadc1); 
   
-  // 2. Poll for conversion to complete[cite: 127]
-  if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK) 
-  {
-      // 3. Read the digital value[cite: 127, 172]
-      adc_val = HAL_ADC_GetValue(&hadc1); 
-  }
+  // // 2. Poll for conversion to complete[cite: 127]
+  // if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK) 
+  // {
+  //     // 3. Read the digital value[cite: 127, 172]
+  //     adc_val = HAL_ADC_GetValue(&hadc1); 
+  // }
   
-  // 4. Stop ADC conversion[cite: 127]
-  HAL_ADC_Stop(&hadc1); 
+  // // 4. Stop ADC conversion[cite: 127]
+  // HAL_ADC_Stop(&hadc1); 
 
-  // 5. Format and print the value via UART
-  sprintf(uart_buf, "Potentiometer Value: %lu\r\n", adc_val);
-  HAL_UART_Transmit(&huart1, (uint8_t*)uart_buf, strlen(uart_buf), HAL_MAX_DELAY);
+  // // 5. Format and print the value via UART
+  // sprintf(uart_buf, "Potentiometer Value: %lu\r\n", adc_val);
+  // HAL_UART_Transmit(&huart1, (uint8_t*)uart_buf, strlen(uart_buf), HAL_MAX_DELAY);
 
-  // Small delay for readability in the serial terminal
-  HAL_Delay(100);
+  // // Small delay for readability in the serial terminal
+  // HAL_Delay(100);
+
+  //TASK 2: POLLING
+  // TASK 2a:
+    HAL_ADC_Start(&hadc1);
+    if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
+      uint32_t value = HAL_ADC_GetValue(&hadc1);
+      apply_moving_average(((float32_t)value / 4095.0f) *3.3f);
+      uint32_t filtered_int = (uint32_t)((output / 3.3f) * 4095.0f);
+      printf("%lu,%lu\r\n", value, filtered_int);
+    }
+    HAL_ADC_Stop(&hadc1);
     /* USER CODE BEGIN 3 */
   }
-  /* USER CODE END 3 */
 }
+  /* USER CODE END 3 */
 
 /**
   * @brief System Clock Configuration
