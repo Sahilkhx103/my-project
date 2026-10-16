@@ -80,6 +80,7 @@ int _write(int file , char *ptr , int len) {
 /* USER CODE BEGIN 0 */
 #define FILTER_LEN 10
 
+// TASK 2: 
 float32_t inputBuffer[FILTER_LEN];
 float32_t output;
 uint32_t idx = 0;
@@ -90,6 +91,15 @@ void apply_moving_average(float32_t new_sample) {
   arm_mean_f32(inputBuffer, FILTER_LEN, &output);
 }
 
+//TASK 2: INTERRUPT
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
+  if (hadc->Instance == ADC1) {
+      uint32_t value = HAL_ADC_GetValue(&hadc1);
+      apply_moving_average(((float32_t)value / 4095.0f) *3.3f);
+      uint32_t filtered_int = (uint32_t)((output / 3.3f) * 4095.0f);
+      printf("%lu,%lu\r\n", value, filtered_int);
+  }
+}
 
 /* USER CODE END 0 */
 
@@ -137,6 +147,9 @@ int main(void)
   //TASK 1:
   // char uart_buf[50];
   // uint32_t adc_val = 0;
+
+  //TASK 2: INTERRUPT
+  HAL_ADC_Start_IT(&hadc1);
   
   while (1)
   {
@@ -163,14 +176,14 @@ int main(void)
 
   //TASK 2: POLLING
   // TASK 2a:
-    HAL_ADC_Start(&hadc1);
-    if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
-      uint32_t value = HAL_ADC_GetValue(&hadc1);
-      apply_moving_average(((float32_t)value / 4095.0f) *3.3f);
-      uint32_t filtered_int = (uint32_t)((output / 3.3f) * 4095.0f);
-      printf("%lu,%lu\r\n", value, filtered_int);
-    }
-    HAL_ADC_Stop(&hadc1);
+    // HAL_ADC_Start(&hadc1);
+    // if (HAL_ADC_PollForConversion(&hadc1, 10) == HAL_OK) {
+    //   uint32_t value = HAL_ADC_GetValue(&hadc1);
+    //   apply_moving_average(((float32_t)value / 4095.0f) *3.3f);
+    //   uint32_t filtered_int = (uint32_t)((output / 3.3f) * 4095.0f);
+    //   printf("%lu,%lu\r\n", value, filtered_int);
+    // }
+    // HAL_ADC_Stop(&hadc1);
     /* USER CODE BEGIN 3 */
   }
 }
