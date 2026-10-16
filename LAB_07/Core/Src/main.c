@@ -145,34 +145,58 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   
   //TASK 1:
-  // char uart_buf[50];
-  // uint32_t adc_val = 0;
+  char uart_buf[50];
+  uint32_t adc_val = 0;
 
   //TASK 2: INTERRUPT
-  HAL_ADC_Start_IT(&hadc1);
+  // HAL_ADC_Start_IT(&hadc1);
   
   while (1)
   {
-    //   //TASK 1:
-    //   /* USER CODE END WHILE */
-  // HAL_ADC_Start(&hadc1); 
-  
-  // // 2. Poll for conversion to complete[cite: 127]
-  // if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK) 
-  // {
-  //     // 3. Read the digital value[cite: 127, 172]
-  //     adc_val = HAL_ADC_GetValue(&hadc1); 
-  // }
-  
-  // // 4. Stop ADC conversion[cite: 127]
-  // HAL_ADC_Stop(&hadc1); 
+      //TASK 1:
+      /* USER CODE END WHILE */
+  // HAL_ADC_Start(&hadc1);
+  //   if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK)
+  //   {
+  //     adc_val = HAL_ADC_GetValue(&hadc1);
+  //   }
+  //   HAL_ADC_Stop(&hadc1);
 
-  // // 5. Format and print the value via UART
-  // sprintf(uart_buf, "Potentiometer Value: %lu\r\n", adc_val);
-  // HAL_UART_Transmit(&huart1, (uint8_t*)uart_buf, strlen(uart_buf), HAL_MAX_DELAY);
+  //   sprintf(uart_buf, "ADC: %lu\r\n", adc_val);
+  //   HAL_UART_Transmit(&huart1, (uint8_t*)uart_buf, strlen(uart_buf), HAL_MAX_DELAY);
 
-  // // Small delay for readability in the serial terminal
-  // HAL_Delay(100);
+  //   HAL_Delay(100);
+
+  //BONUS TASK:
+  HAL_ADC_Start(&hadc1);
+    if (HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY) == HAL_OK)
+    {
+      adc_val = HAL_ADC_GetValue(&hadc1);
+    }
+    HAL_ADC_Stop(&hadc1);
+
+    // 2. Convert Raw ADC to Voltage (0.0V to 3.3V)
+    float voltage = (float)adc_val * (3.3f / 4095.0f);
+
+    // 3. Convert Voltage to Distance 
+    // NOTE: Adjust this formula based on your specific sensor's datasheet or calibration curve!
+    // Example 1 (Inverse relationship common for IR sensors, e.g., K = 15.0):
+    float distance_cm = 0.0f;
+    if (voltage > 0.1f) {  // Prevent division by zero
+        distance_cm = 15.0f / voltage; 
+    }
+    
+    // Example 2 (If your sensor is linear, use something like: float distance_cm = voltage * scaling_factor; )
+
+    // 4. Print Raw ADC, Voltage (multiplied by 1000 for mV to avoid float printing issues), and Distance
+    // Multiplying by 1000 and casting to int prevents needing extra float linker flags for printf
+    int voltage_mv = (int)(voltage * 1000.0f);
+    int distance_mm = (int)(distance_cm * 10.0f); // distance in millimeters as integer
+
+    // Output format: Raw_ADC, Voltage_mV, Distance_mm
+    printf("Raw: %lu, Voltage: %d mV, Distance: %d mm\r\n", adc_val, voltage_mv, distance_mm);
+
+    HAL_Delay(200);
 
   //TASK 2: POLLING
   // TASK 2a:
@@ -290,7 +314,7 @@ static void MX_ADC1_Init(void)
 
   /** Configure Regular Channel
   */
-  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Channel = ADC_CHANNEL_2;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
