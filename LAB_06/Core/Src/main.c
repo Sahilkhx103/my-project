@@ -48,6 +48,7 @@ I2C_HandleTypeDef hi2c1;
 SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
 
@@ -72,6 +73,7 @@ static void MX_SPI1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USB_PCD_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -122,6 +124,7 @@ int main(void)
   MX_TIM2_Init();
   MX_USB_PCD_Init();
   MX_USART1_UART_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
 HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
   /* USER CODE END 2 */
@@ -153,22 +156,81 @@ HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
           
       //     print_flag = 0; 
       // }
-    if (new_capture_ready == 1) {
-        if (period > 0) {
-            float frequency = 1000000.0f / (float)period;
+      // TASK 2:
+  //   if (new_capture_ready == 1) {
+  //       if (period > 0) {
+  //           float frequency = 1000000.0f / (float)period;
             
-            int freq_whole = (int)frequency;
-            int freq_decimal = (int)((frequency - freq_whole) * 100);
+  //           int freq_whole = (int)frequency;
+  //           int freq_decimal = (int)((frequency - freq_whole) * 100);
             
-            myPrintf("IC Frequency: %d.%02d Hz\r\n", freq_whole, freq_decimal);
-        }
-        new_capture_ready = 0;
+  //           myPrintf("IC Frequency: %d.%02d Hz\r\n", freq_whole, freq_decimal);
+  //       }
+  //       new_capture_ready = 0;
     
-  }
-      
+  // }
+  // Task 3: Motor Speed Measurement using Polling
+      // 1. Wait for signal to go HIGH
+      // while (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5) == GPIO_PIN_RESET);
+
+      // // 2. Wait for the FIRST falling edge (transition from HIGH to LOW)
+      // while (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5) == GPIO_PIN_SET);
+
+      // // Start TIM3 counter (1 µs tick base from Prescaler = 47)
+      // __HAL_TIM_SET_COUNTER(&htim3, 0);
+      // HAL_TIM_Base_Start(&htim3);
+
+      // // 3. Wait for signal to go LOW back to HIGH
+      // while (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5) == GPIO_PIN_RESET);
+
+      // // 4. Wait for the SECOND falling edge
+      // while (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5) == GPIO_PIN_SET);
+
+      // // Stop TIM3 and capture elapsed ticks
+      // HAL_TIM_Base_Stop(&htim3);
+      // uint32_t captured_ticks = __HAL_TIM_GET_COUNTER(&htim3);
+
+      // if (captured_ticks > 0) {
+      //     float enc_frequency = 1000000.0f / (float)captured_ticks;
+      //     float ppr = 374.0f; // Motor Pulses Per Revolution
+      //     float rpm = (60.0f * enc_frequency) / ppr;
+
+      //     int rpm_whole = (int)rpm;
+      //     int rpm_decimal = (int)((rpm - rpm_whole) * 100);
+
+      //     myPrintf("Motor RPM: %d.%02d RPM\r\n", rpm_whole, rpm_decimal);
+      // }
+            
    
+      // HAL_Delay(100);
+
+      //TASK_4:
+      if (new_capture_ready == 1) {
+          if (period > 0) {
+              // 1. Calculate encoder frequency from the input capture period
+              float frequency = 1000000.0f / (float)period;
+              
+              // 2. Calculate Motor RPM using the formula: RPM = (60 * frequency) / PPR[cite: 10]
+              float ppr = 374.0f; // Standard Pulses Per Revolution for geared DC motors
+              float rpm = (60.0f * frequency) / ppr;
+
+              // Split frequency into integers for clean printing
+              int freq_whole = (int)frequency;
+              int freq_decimal = (int)((frequency - freq_whole) * 100);
+
+              // Split RPM into integers for clean printing
+              int rpm_whole = (int)rpm;
+              int rpm_decimal = (int)((rpm - rpm_whole) * 100);
+              
+              // Print both frequency and calculated motor RPM over UART
+              myPrintf("Encoder Freq: %d.%02d Hz | Motor RPM: %d.%02d RPM\r\n", 
+                       freq_whole, freq_decimal, rpm_whole, rpm_decimal);
+          }
+          new_capture_ready = 0;
+      }
+      
       HAL_Delay(100);
-    /* USER CODE END WHILE */
+      /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
@@ -369,6 +431,51 @@ static void MX_TIM2_Init(void)
   /* USER CODE BEGIN TIM2_Init 2 */
 
   /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 47;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 65535;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
 
 }
 
