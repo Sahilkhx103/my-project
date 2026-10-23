@@ -67,47 +67,37 @@ static void MX_USB_PCD_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 uint8_t temperature;
-// Read bit (0x80) | OUT_TEMP register (0x26)[cite: 145, 149]
 uint8_t txData = 0x80 | 0x26; 
 char buffer[30];
 
 #define CTRL_REG1 0x20
-// PD=1 (Power on), Xen/Yen/Zen enabled
 #define CTRL_REG1_VAL 0b00001111 
 
 void gyro_init(void)
 {
   uint8_t tx[2] = { CTRL_REG1, CTRL_REG1_VAL };
   
-  // Pull CS low to begin communication[cite: 147]
   HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
-  
-  // Send control register configuration in blocking mode just once[cite: 147]
+
   HAL_SPI_Transmit(&hspi1, tx, 2, HAL_MAX_DELAY);
   
-  // Pull CS high to end communication[cite: 147]
   HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
 }
 
-// Automatically called when HAL_SPI_Transmit_IT finishes[cite: 147]
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 {
   if (hspi->Instance == SPI1)
   {
-    // Start receiving the 1-byte temperature data[cite: 147]
     HAL_SPI_Receive_IT(&hspi1, (uint8_t*)&temperature, 1);
   }
 }
 
-// Automatically called when HAL_SPI_Receive_IT finishes[cite: 147]
 void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi)
 {
   if (hspi->Instance == SPI1)
   {
-    // Pull CS HIGH to end communication[cite: 147]
     HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
     
-    // Format and transmit the signed temperature value over UART[cite: 147]
     sprintf(buffer, "%d\r\n", temperature);
     HAL_UART_Transmit(&huart1, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
   }
@@ -158,11 +148,8 @@ int main(void)
     /* USER CODE END WHILE */
     HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
     
-    // 2. Trigger the interrupt-based transmission
-    // This will automatically jump to TxCpltCallback when done
     HAL_SPI_Transmit_IT(&hspi1, &txData, 1);
     
-    // Wait 100ms before taking the next reading[cite: 150]
     HAL_Delay(100);
     /* USER CODE BEGIN 3 */
   }
