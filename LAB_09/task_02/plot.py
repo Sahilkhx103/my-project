@@ -43,7 +43,7 @@ while True:
             plt.pause(0.0001)
 
             # Keep only last 500 samples
-            if len(adcValues) > 500:
+            if len(ax_vals) > 500:
                 ax_vals.pop(0)
                 ay_vals.pop(0)
                 az_vals.pop(0)
