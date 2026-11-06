@@ -106,49 +106,32 @@ int main(void)
   // MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
 
-  // Print a message over UART to indicate the start of the test.
   print_uart("=== Custom Heap Driver (Direct SRAM) ===\r\n");
 
-  // Initialize the custom heap allocator.
-  // This function sets up internal memory structures (e.g., the block_map array)
-  // so that all heap memory is marked as free.
-  // It MUST be called before using heap_alloc or heap_free.
+  
   heap_init();
 
-  // Allocate 32 bytes from the heap.
-  // heap_alloc returns a pointer to a memory region in SRAM that is at least 32 bytes long.
-  // We cast the void* return type to char* so we can use string functions like strcpy.
   char* block1 = (char*)heap_alloc(32);
 
-  // Allocate 48 bytes from the heap.
   char* block2 = (char*)heap_alloc(48);
 
-  // Check if both allocations were successful (i.e., the returned pointers are not NULL).
   if (block1 && block2) {
-      // If successful, store strings into the allocated memory regions.
-      // Since the memory comes from our own heap allocator, we assume it behaves like malloc.
-      strcpy(block1, "Data in Block 1");    // Copy string into the memory allocated in block1
-      strcpy(block2, "Text from Block 2");  // Copy string into the memory allocated in block2
+    
+      strcpy(block1, "Data in Block 1");   
+      strcpy(block2, "Text from Block 2");  
 
-      // Print the contents of both blocks over UART.
-      // This confirms that memory was correctly allocated and can be accessed.
       print_uart(block1); 
       print_uart("\r\n");
       print_uart(block2); 
       print_uart("\r\n");
 
   } else {
-      // If either allocation failed (due to insufficient memory or a bug), print an error message.
       print_uart("Allocation failed.\r\n");
   }
 
-  // Free the memory blocks that were previously allocated.
-  // This makes them available again for future calls to heap_alloc.
-  // It's important to always free memory when you're done using it to avoid memory leaks.
   heap_free(block1);
   heap_free(block2);
 
-  // Print a confirmation that memory has been freed.
   print_uart("Blocks freed.\r\n");
 
   /* USER CODE END 2 */
