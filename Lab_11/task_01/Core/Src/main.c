@@ -68,8 +68,9 @@ static void MX_USB_PCD_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 float current_angle = 0.0f;
-float dt = 0.1f; 
-
+float dt = 0.02f; 
+float gyro_y_offset = 0.0f;
+float acc_angle_offset = 0.0f;
 
 void Init_Onboard_Sensors(void) {
     uint8_t accel_init_data[2] = {0x20, 0x77};
@@ -80,6 +81,37 @@ void Init_Onboard_Sensors(void) {
     HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
     HAL_SPI_Transmit(&hspi1, gyro_init_tx, 2, 100);
     HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+}
+
+void Calibrate_Sensors(void) {
+    const int num_samples = 100;
+    float gyro_sum = 0.0f;
+    float acc_angle_sum = 0.0f;
+
+    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, GPIO_PIN_SET);
+
+    for (int i = 0; i < num_samples; i++) {
+        uint8_t accel_rx[6];
+        HAL_I2C_Mem_Read(&hi2c1, (uint16_t)(0x19 << 1), (0x28 | 0x80), I2C_MEMADD_SIZE_8BIT, accel_rx, 6, 100);
+        int16_t raw_acc_x = (int16_t)((accel_rx[1] << 8) | accel_rx[0]);
+        int16_t raw_acc_z = (int16_t)((accel_rx[5] << 8) | accel_rx[4]);
+        acc_angle_sum += atan2((float)raw_acc_x, (float)(-raw_acc_z)) * (180.0f / 3.14159f);
+
+        uint8_t gyro_tx[3] = {0xEA, 0x00, 0x00};
+        uint8_t gyro_rx[3] = {0};
+        HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
+        HAL_SPI_TransmitReceive(&hspi1, gyro_tx, gyro_rx, 3, 100);
+        HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+        int16_t raw_gyro_y = (int16_t)((gyro_rx[2] << 8) | gyro_rx[1]);
+        gyro_sum += -(float)raw_gyro_y * 0.00875f;
+
+        HAL_Delay(5); 
+    }
+
+    acc_angle_offset = acc_angle_sum / (float)num_samples;
+    gyro_y_offset = gyro_sum / (float)num_samples;
+
+    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_8, GPIO_PIN_RESET);
 }
 /* USER CODE END 0 */
 
@@ -118,6 +150,8 @@ int main(void)
   MX_USB_PCD_Init();
   /* USER CODE BEGIN 2 */
   Init_Onboard_Sensors();
+  HAL_Delay(200);
+  Calibrate_Sensors();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -133,28 +167,27 @@ int main(void)
     int16_t raw_acc_x = (int16_t)((accel_rx[1] << 8) | accel_rx[0]);
     int16_t raw_acc_z = (int16_t)((accel_rx[5] << 8) | accel_rx[4]);
 
-    float acc_angle = atan2((float)raw_acc_x, (float)raw_acc_z) * (180.0f / 3.14159f);
+    float acc_angle = (atan2((float)raw_acc_x, (float)(-raw_acc_z)) * (180.0f / 3.14159f)) - acc_angle_offset;
 
-
-    uint8_t gyro_tx[3] = {0xE8, 0x00, 0x00}; 
+    uint8_t gyro_tx[3] = {0xEA, 0x00, 0x00}; 
     uint8_t gyro_rx[3] = {0};
 
     HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET); 
     HAL_SPI_TransmitReceive(&hspi1, gyro_tx, gyro_rx, 3, 100);
     HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);  
 
-    int16_t raw_gyro_x = (int16_t)((gyro_rx[2] << 8) | gyro_rx[1]);
-    float gyro_rate_x = (float)raw_gyro_x * 0.00875f;
+    int16_t raw_gyro_y = (int16_t)((gyro_rx[2] << 8) | gyro_rx[1]);
+    
+    float gyro_rate_y = (-(float)raw_gyro_y * 0.00875f) - gyro_y_offset;
 
-
-    current_angle = 0.98f * (current_angle + (gyro_rate_x * dt)) + (0.02f * acc_angle);
+    current_angle = 0.98f * (current_angle + (gyro_rate_y * dt)) + (0.02f * acc_angle);
 
     char tx_buffer[64];
-    sprintf(tx_buffer, "%.2f,%.2f,%.2f\r\n", acc_angle, gyro_rate_x, current_angle);
+    sprintf(tx_buffer, "%.2f,%.2f,%.2f\r\n", acc_angle, gyro_rate_y, current_angle);
 
     HAL_UART_Transmit(&huart1, (uint8_t*)tx_buffer, strlen(tx_buffer), 100);
 
-    HAL_Delay(100);
+    HAL_Delay(20); // Matches dt = 0.02f (use 50 if keeping dt = 0.05f)
   }
   /* USER CODE END 3 */
 }
